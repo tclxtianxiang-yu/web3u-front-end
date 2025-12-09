@@ -8,6 +8,7 @@
 
 ## 构建配置
 - Build command: `npm run build`
+- Install command: 默认使用 npm（仓库保留 package-lock.json，已移除 pnpm/yarn lock 以避免 Pages 强制使用 pnpm/yarn）
 - Build output directory: `dist`
 - Node 版本：使用 Cloudflare 默认版本即可（如需固定可在 Pages 设置或 `.nvmrc`）。
 
