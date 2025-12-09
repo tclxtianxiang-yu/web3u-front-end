@@ -8,9 +8,13 @@ import { useQuery } from "@tanstack/react-query";
 import { GET_COURSES } from "../../lib/queries";
 import { graphQLClient } from "../../lib/graphql";
 import { formatUnits } from "viem";
+import { useState } from "react";
+import EditCourseDialog from "../../components/EditCourseDialog";
 
 const TeacherCourses = () => {
     const { address: teacherAddress } = useAccount();
+    const [selectedCourse, setSelectedCourse] = useState<any>(null);
+    const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
 
     const { data: coursesData, isLoading, error } = useQuery({
         queryKey: ["teacherCourses", teacherAddress],
@@ -22,6 +26,11 @@ const TeacherCourses = () => {
     });
 
     const courses = (coursesData as any)?.courses || [];
+
+    const handleEditClick = (course: any) => {
+        setSelectedCourse(course);
+        setIsEditDialogOpen(true);
+    };
 
 	if (isLoading) {
         return (
@@ -82,7 +91,7 @@ const TeacherCourses = () => {
                                         </div>
                                     </div>
                                     <div className="flex gap-2">
-                                        <Button variant="outline" size="sm">
+                                        <Button variant="outline" size="sm" onClick={() => handleEditClick(course)}>
                                             <Edit className="h-4 w-4 mr-2" />
                                             Edit
                                         </Button>
@@ -96,6 +105,14 @@ const TeacherCourses = () => {
                         </Card>
                     ))}
                 </div>
+            )}
+
+            {selectedCourse && (
+                <EditCourseDialog 
+                    isOpen={isEditDialogOpen} 
+                    onClose={() => setIsEditDialogOpen(false)} 
+                    course={selectedCourse} 
+                />
             )}
 		</div>
 	);

@@ -100,7 +100,7 @@ type Query {
   查询评价列表
   支持按 courseId 或 teacherWalletAddress 过滤
   """
-  reviews(courseId: ID, teacherWalletAddress: String): [Review!]!
+  reviews(courseId: ID, studentWalletAddress: String, teacherWalletAddress: String): [Review!]!
 }
 ```
 
@@ -164,3 +164,89 @@ type Query {
 
 ### 3.3 预期效果
 前端无需再手动处理 `checkUser -> createUser -> login` 的繁琐流程。用户只要签名登录，就自动成为合法用户，可以直接进行发布课程、购买等操作。
+
+---
+
+## 4. 课程购买功能 - 链上数据同步问题 (CourseRegistry)
+
+### 4.1 严重问题描述
+前端在调用购买课程 (`purchaseCourse`) 功能时报错：`CourseRegistry: course does not exist`。
+这表明虽然课程已在后端数据库创建（GraphQL `createCourse` 成功），但**并未在链上 `CourseRegistry` 合约中注册**。
+
+目前 `CoursePlatform` 合约的购买逻辑强依赖于 `CourseRegistry`。如果合约中查不到该 `courseId`，交易就会 revert，导致购买失败。
+
+### 4.2 原因分析
+当前的 `createCourse` GraphQL Mutation 似乎仅执行了数据库写入操作，**缺失了调用链上合约进行注册的步骤**。
+根据业务逻辑，`CourseRegistry.createCourse` 方法受到权限控制（`PLATFORM_ROLE`），教师无法直接调用，必须由后端（持有 `backendSigner`）代为调用。
+
+### 4.3 需求描述
+需要修改后端的 `createCourse` Mutation 逻辑，实现“链下创建 + 链上注册”的原子性或最终一致性。
+
+#### 建议流程：
+1.  **接收请求**：后端收到前端的 `createCourse` 请求。
+2.  **链上注册**：后端使用 `backendSigner` 私钥，调用 `CourseRegistry` 合约的 `createCourse(courseId, teacherAddress, priceYD)` 方法。
+    *   注意：`priceYD` 需要进行精度转换（ETH 18位精度）。
+3.  **等待确认**：等待链上交易确认（或采用异步队列处理）。
+4.  **数据库写入**：链上注册成功后，将课程信息（包括 `transactionHash`）写入 Supabase 数据库。
+5.  **返回结果**：返回创建成功的课程对象。
+
+#### 替代方案（异步）：
+如果链上等待时间过长，可以先写入数据库并将状态设为 `PENDING_ONCHAIN`，然后通过后台队列异步上链。但在上链成功前，课程状态不应为 `PUBLISHED`，以防前端尝试购买。
+
+### 4.4 预期效果
+教师发布课程后，该课程不仅存在于数据库，也存在于链上 `CourseRegistry` 中。学生随后调用 `purchaseCourse` 时，合约能正确读取到课程信息，从而完成购买。
+
+---
+
+## 5. 前端 Mock 替换所需的后端/合约支持
+
+前端已有的占位/Mock 数据需要用真实接口或合约调用替换，请提供下列能力：
+
+### 5.1 学生学习历史（`Student/History.tsx`）
+- 提供聚合数据接口：`totalWatchTime`、`currentStreak`（连续学习天数）。
+- 提供过去 7 天的学习记录（按天累积时长或完成度）以绘制周进度图。
+
+### 5.2 学生 NFT 证书（`Student/NFT.tsx`）
+- 返回当前学生已拥有的证书列表（链上或数据库），字段建议：`tokenId`、`courseId`、`courseTitle`、`issueTime`、`imageUrl`。
+- 当列表为空时，前端可展示“暂无证书”空状态。
+
+### 5.3 教师收益 DeFi 金库余额（`Teacher/Earnings.tsx`）
+- 需要查询教师在合约/平台中的待提现或金库余额（与 `YDToken` 余额区分）。请提供 GraphQL/REST 接口或明确合约读方法，返回可展示的余额（18 位精度）。
+
+### 5.4 教师 NFT 徽章（`Teacher/NFT.tsx`）
+- 提供教师拥有的徽章列表接口或合约读方法。字段建议：`tokenId`、`name`、`description`、`imageUrl`、`earnedAt`。
+- “即将获得的徽章”逻辑：需要后端提供当前教师的达成度（如评分/课程数/好评率）以便前端提示。
+
+## 5. 课程管理功能增强 (编辑与删除)
+
+### 5.1 背景
+教师目前无法修改已发布课程的信息（如修正标题、更新视频内容）或删除错误创建的课程。这影响了教师对课程的精细化管理能力。
+
+### 5.2 需求描述
+
+#### A. 编辑课程 (`updateCourse`)
+1.  **Mutation**: 建议新增 `updateCourse(updateCourseInput: UpdateCourseInput!, courseId: ID!)`
+2.  **功能**: 允许教师修改课程的非链上核心信息。
+3.  **入参**:
+    *   `courseId`: 待更新课程的 ID。
+    *   `updateCourseInput`: 包含以下可选字段：
+        *   `title`: String
+        *   `description`: String
+        *   `category`: String
+        *   `thumbnailUrl`: String
+        *   `videoUrl`: String
+        *   `status`: String (用于修改状态，如从 `draft` 到 `published` 或 `archived`。注意：`published` 状态变更可能需要与链上同步。)
+    *   **鉴权**: 必须登录，且只能修改自己发布的课程（即 `teacherWalletAddress` 匹配当前登录用户）。
+    *   **链上联动 (可选)**: 如果 `status` 变更为 `published` 且此前未上链，则应触发上链逻辑。如果 `status` 变更为 `archived`，应调用 `CourseRegistry.updateCourseStatus` 更新链上状态。
+    *   **价格修改**: `priceYd` 字段是否可修改需根据 `CourseRegistry` 合约的 `updateCoursePrice` 方法来决定。如果合约支持，后端应联动调用。
+
+#### B. 删除课程 (`removeCourse`)
+11. **Mutation**: 建议新增 `removeCourse(courseId: ID!)`
+12. **功能**: 允许教师删除课程。
+13. **入参**: `courseId`: 待删除课程的 ID。
+14. **鉴权**: 必须登录，且只能删除自己发布的课程。
+15. **逻辑**: 建议实现**软删除**（Soft Delete），即在数据库中标记为 `deleted` 状态而非物理删除，以便数据审计和恢复。
+16. **链上处理**: 如果课程已上链，应调用 `CourseRegistry.updateCourseStatus` 将链上课程状态变更为 `ARCHIVED`，防止继续被购买。
+
+### 5.3 预期效果
+教师可以在个人后台方便地管理其发布的课程，包括修改内容和状态，以及删除不再需要的课程。

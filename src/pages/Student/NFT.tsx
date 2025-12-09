@@ -7,13 +7,14 @@ import { CONTRACTS } from "../../contracts/addresses";
 import { StudentCertificate_ABI } from "../../contracts/abis";
 import { useEffect, useState } from "react";
 
-// 定义证书数据类型，结合合约返回和模拟数据
+// 证书数据类型，结合链上数据与 metadata
 interface NftCertificate {
     id: number;
     course: string;
-    completedDate: string; // From metadata or mock
-    tokenId: string; // Contract tokenId
-    image: string; // From metadata or mock
+    completedDate: string;
+    tokenId: string;
+    image: string;
+    metadataUrl?: string;
 }
 
 const StudentNFT = () => {
@@ -46,42 +47,68 @@ const StudentNFT = () => {
     });
 
     useEffect(() => {
-        if (certificateDetails && certificateDetails.length > 0 && certificateIds) {
-            const formattedCerts: NftCertificate[] = [];
+        const loadCertificates = async () => {
+            if (!certificateDetails || certificateDetails.length === 0 || !certificateIds) {
+                setRealCertificates([]);
+                return;
+            }
+
+            const parsed: NftCertificate[] = [];
             for (let i = 0; i < certificateDetails.length; i += 2) {
                 const certInfo = certificateDetails[i]?.result as any;
-                const tokenURI = certificateDetails[i+1]?.result as string;
-                const tokenId = certificateIds[i/2]; // Get actual tokenId
+                const tokenURI = certificateDetails[i + 1]?.result as string;
+                const tokenId = certificateIds[i / 2];
 
-                if (certInfo && tokenURI) {
-                    // Placeholder for fetching metadata from URI
-                    // For now, we'll parse courseId directly and mock other details
-                    const courseId = certInfo.courseId || `Course-${tokenId}`;
-                    const issuedAt = certInfo.issuedAt ? new Date(Number(certInfo.issuedAt) * 1000).toLocaleDateString() : 'N/A';
+                if (!certInfo || !tokenURI) continue;
 
-                    formattedCerts.push({
-                        id: Number(tokenId), // Use actual tokenId
-                        course: courseId,
-                        completedDate: issuedAt,
-                        tokenId: String(tokenId),
-                        image: "🎓" // Replace with actual image from metadataURI if parsed
-                    });
+                const courseId = certInfo.courseId || `Course-${tokenId}`;
+                const issuedAt = certInfo.issuedAt ? new Date(Number(certInfo.issuedAt) * 1000).toLocaleDateString() : "N/A";
+
+                let image = "🎓";
+                let title = `Course ${courseId}`;
+                try {
+                    const res = await fetch(tokenURI);
+                    if (res.ok) {
+                        const meta = await res.json();
+                        if (meta?.image) image = meta.image;
+                        if (meta?.name) title = meta.name;
+                        // 若 metadata 含有 completedDate 字段则覆盖
+                        if (meta?.completedDate) {
+                            const d = new Date(meta.completedDate);
+                            if (!Number.isNaN(d.getTime())) {
+                                parsed.push({
+                                    id: Number(tokenId),
+                                    course: title,
+                                    completedDate: d.toLocaleDateString(),
+                                    tokenId: String(tokenId),
+                                    image,
+                                    metadataUrl: tokenURI,
+                                });
+                                continue;
+                            }
+                        }
+                    }
+                } catch {
+                    // ignore metadata fetch errors，使用链上字段
                 }
+
+                parsed.push({
+                    id: Number(tokenId),
+                    course: title,
+                    completedDate: issuedAt,
+                    tokenId: String(tokenId),
+                    image,
+                    metadataUrl: tokenURI,
+                });
             }
-            setRealCertificates(formattedCerts);
-        } else if (!certificateIds || certificateIds.length === 0) {
-             setRealCertificates([]); // No certificates
-        }
+            setRealCertificates(parsed);
+        };
+
+        loadCertificates();
     }, [certificateDetails, certificateIds]);
 
     const isLoading = isLoadingIds || isLoadingDetails;
     const error = errorIds || errorDetails;
-
-	// Mock data for UI presentation if no real data
-	const mockNftCertificates = [
-		{ id: 1, course: "Solidity Fundamentals (Mock)", completedDate: "2025-11-15", tokenId: "0x1a2b3c", image: "🎓" },
-		{ id: 2, course: "Smart Contract Security (Mock)", completedDate: "2025-11-20", tokenId: "0x4d5e6f", image: "🔐" },
-	];
 
     if (!isConnected) {
         return (
@@ -110,9 +137,6 @@ const StudentNFT = () => {
         );
     }
 
-	const certificatesToDisplay = realCertificates.length > 0 ? realCertificates : mockNftCertificates;
-
-
 	return (
 		<div className="py-8 max-w-7xl mx-auto space-y-8">
 			<h1 className="text-3xl font-bold tracking-tight">我的 NFT 证书</h1>
@@ -133,30 +157,59 @@ const StudentNFT = () => {
 				</CardContent>
 			</Card>
 
-			<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-				{certificatesToDisplay.map((cert) => (
-					<Card key={cert.id} className="overflow-hidden hover:shadow-lg transition-shadow">
-						<div className="h-48 bg-gradient-to-br from-primary/80 to-primary flex items-center justify-center text-6xl">
-							{cert.image}
-						</div>
-						<CardHeader>
-							<CardTitle className="line-clamp-1">{cert.course}</CardTitle>
-						</CardHeader>
-						<CardContent className="space-y-2">
-							<p className="text-sm text-muted-foreground">
-								完成日期: {cert.completedDate}
-							</p>
-							<p className="text-sm text-muted-foreground font-mono bg-muted p-1 rounded w-fit">
-								Token ID: {cert.tokenId}
-							</p>
-						</CardContent>
-						<CardFooter className="gap-2">
-							<Button className="flex-1">在区块链上查看</Button>
-							<Button variant="outline">分享</Button>
-						</CardFooter>
-					</Card>
-				))}
-			</div>
+			{realCertificates.length === 0 ? (
+				<Card className="border-dashed">
+					<CardContent className="py-10 text-center text-muted-foreground space-y-3">
+						<GraduationCap className="w-10 h-10 mx-auto text-primary" />
+						<p>暂时没有证书，完成课程即可获得链上 NFT 证书。</p>
+						<Button variant="outline">去浏览课程</Button>
+					</CardContent>
+				</Card>
+			) : (
+				<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+					{realCertificates.map((cert) => {
+						const explorerUrl = `https://sepolia.etherscan.io/token/${CONTRACTS.StudentCertificate.address}?a=${cert.tokenId}`;
+						return (
+							<Card key={cert.id} className="overflow-hidden hover:shadow-lg transition-shadow">
+								<div className="h-48 bg-gradient-to-br from-primary/80 to-primary flex items-center justify-center text-6xl">
+									{cert.image.startsWith("http") ? (
+										<img src={cert.image} alt={cert.course} className="h-full w-full object-cover" />
+									) : (
+										cert.image
+									)}
+								</div>
+								<CardHeader>
+									<CardTitle className="line-clamp-1">{cert.course}</CardTitle>
+								</CardHeader>
+								<CardContent className="space-y-2">
+									<p className="text-sm text-muted-foreground">完成日期: {cert.completedDate}</p>
+									<p className="text-sm text-muted-foreground font-mono bg-muted p-1 rounded w-fit">
+										Token ID: {cert.tokenId}
+									</p>
+								</CardContent>
+								<CardFooter className="gap-2">
+									<Button asChild className="flex-1">
+										<a href={explorerUrl} target="_blank" rel="noreferrer">
+											在区块链上查看
+										</a>
+									</Button>
+									{cert.metadataUrl ? (
+										<Button variant="outline" asChild>
+											<a href={cert.metadataUrl} target="_blank" rel="noreferrer">
+												查看 metadata
+											</a>
+										</Button>
+									) : (
+										<Button variant="outline" disabled>
+											查看 metadata
+										</Button>
+									)}
+								</CardFooter>
+							</Card>
+						);
+					})}
+				</div>
+			)}
 
 			<Card>
 				<CardHeader>

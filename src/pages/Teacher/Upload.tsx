@@ -12,6 +12,7 @@ import { graphQLClient } from "../../lib/graphql";
 import { GENERATE_VIDEO_UPLOAD_URL_MUTATION } from "../../lib/mutations";
 import { CREATE_COURSE } from "../../lib/queries";
 import { useAccount } from "wagmi";
+import { useNavigate } from "react-router"; // Import useNavigate
 
 const TeacherUpload = () => {
     const { isAuthenticated } = useAuth();
@@ -27,6 +28,7 @@ const TeacherUpload = () => {
         videoUrl: "",
         thumbnailUrl: ""
     });
+    const navigate = useNavigate(); // Initialize useNavigate
 
     const captureVideoFrame = (videoFile: File): Promise<Blob | null> => {
         return new Promise((resolve) => {
@@ -172,6 +174,7 @@ const TeacherUpload = () => {
                 }
             });
             toast({ title: "Success", description: "Course published successfully!" });
+            navigate('/teacher/courses'); // Redirect on success
         } catch (error) {
             console.error(error);
             toast({ variant: "destructive", title: "Error", description: "Failed to publish course." });

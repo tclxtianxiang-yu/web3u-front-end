@@ -62,7 +62,11 @@ const CourseCatalog = () => {
 				{courses.map((course: any) => (
 					<Card key={course.id} className="overflow-hidden flex flex-col hover:shadow-lg transition-shadow">
 						<div className="h-48 bg-gradient-to-br from-primary/80 to-primary flex items-center justify-center text-6xl">
-							{course.thumbnailUrl || "🔷"}
+							{course.thumbnailUrl ? (
+                                <img src={course.thumbnailUrl} alt={course.title} className="w-full h-full object-cover" />
+                            ) : (
+                                "🔷" // Default placeholder if no thumbnail
+                            )}
 						</div>
 						<CardHeader>
 							<div className="flex justify-between items-start">

@@ -14,6 +14,7 @@ import {
     DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from "./ui/dropdown-menu";
+import { Button } from "./ui/button"; // Import Button
 import ProfileDialog from "./ProfileDialog";
 import { useState } from "react";
 

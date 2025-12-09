@@ -39,3 +39,42 @@ export const UPDATE_PROFILE_MUTATION = gql`
     }
   }
 `;
+
+export const UPDATE_COURSE_MUTATION = gql`
+  mutation UpdateCourse($courseId: ID!, $input: UpdateCourseInput!) {
+    updateCourse(courseId: $courseId, updateCourseInput: $input) {
+      id
+      title
+      description
+      priceYd
+      category
+      thumbnailUrl
+      videoUrl
+      status
+    }
+  }
+`;
+
+export const REMOVE_COURSE_MUTATION = gql`
+  mutation RemoveCourse($courseId: ID!) {
+    removeCourse(courseId: $courseId) {
+      id
+      status
+    }
+  }
+`;
+
+export const MARK_LESSON_COMPLETE = gql`
+  mutation MarkLessonComplete($createLearningRecordInput: CreateLearningRecordInput!) {
+    createLearningRecord(createLearningRecordInput: $createLearningRecordInput) {
+      id
+      courseId
+      lessonId
+      userWalletAddress
+      completed
+      progressPercentage
+      watchTime
+      lastWatchedAt
+    }
+  }
+`;
