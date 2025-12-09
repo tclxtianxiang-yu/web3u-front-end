@@ -47,6 +47,10 @@ const commonConfig = {
 			...getEnvVariables(),
 		}),
 		new MiniCssExtractPlugin({ filename: "[name].bundle.css" }),
+		new webpack.DefinePlugin({
+			// 注入可在 Cloudflare Pages 设置的 API_URL 环境变量
+			"process.env.API_URL": JSON.stringify(process.env.API_URL || ""),
+		}),
 	],
 	module: {
 		rules: [
